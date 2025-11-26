@@ -1,0 +1,22 @@
+server:
+  # 端口配置
+  port: 8080
+
+spring:
+  # 数据库配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/campuswall?useSSL=false&serverTimezone=UTC
+    username: root
+    password: 123456
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+# minIO 配置
+minio:
+  endpoint: http://localhost:9000
+  accessKey: admin
+  secretKey: password
+  bucket: campuswall
