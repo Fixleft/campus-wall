@@ -20,3 +20,7 @@ minio:
   accessKey: admin
   secretKey: password
   bucket: campuswall
+
+# src/main/resources/application.yml
+jwt:
+  secret: campus-wall-2025-super-secret-key-that-no-one-can-guess-1145141919810
