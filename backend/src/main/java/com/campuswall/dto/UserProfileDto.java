@@ -22,6 +22,6 @@ public class UserProfileDto {
     @Max(value = 150, message = "年龄不合法")
     private Integer age;
 
-    @Pattern(regexp = "男|女|其他", message = "性别必须为男 / 女 / 其他")
+    @Pattern(regexp = "男|女|保密", message = "性别必须为男 / 女 / 保密")
     private String gender;
 }

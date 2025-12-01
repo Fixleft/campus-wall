@@ -1,79 +1,284 @@
-// components/PostCard.tsx
-import { Heart, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { Heart, Play, Layers } from "lucide-react";
+import * as React from "react";
+import { useState, useEffect, useRef } from "react";
 import PostDetailModal from "./PostDetailModal";
-import { motion } from "framer-motion";
+import {useUser} from "@/data/UserContext"
+import { TextPostCover } from "./PuraTextCard";
+import { Trash2 ,Edit2 } from "lucide-react"; 
+import api from "@/utils/api"
+import ConfirmDialog from "./ConfirmDialog";
+import EditPostModal from "./EditPostModal";
+
+// 1. 更新类型定义
+export interface MediaType {
+  type: 'image' | 'video';
+  url: string;
+  coverUrl?: string | null;
+}
+
+interface PostCardProps {
+  id: number;
+  avatar: string;
+  name: string;
+  content: string;
+  media: MediaType[];
+  createdAt: string;
+  likeCount: number;
+  liked: boolean;
+  location: string;
+  tags?: string[];
+  isOwner?: boolean; 
+  onLike: (postId: number, currentlyLiked: boolean) => void;
+  onDelete?: (id: number) => void;
+  onUpdate?: (id: number, newContent: string, newTags: string[]) => void;
+}
+
+const COLORS = [
+  "#F87979", "#C09CF8", "#F496E5", "#FADBD8", 
+  "#E8DAEF", "#D6EAF8", "#D1F2EB", "#FCF3CF", "#ccf6f4"
+];
 
 export default function PostCard({
   id,
   avatar,
   name,
   content,
-  image,
-}: {
-  id: number;
-  avatar: string;
-  name: string;
-  content: string;
-  image?: string;
-}) {
-  const [likes, setLikes] = useState(Math.floor(Math.random() * 300));
-  const [comments, setComments] = useState(Math.floor(Math.random() * 80));
-  const [liked, setLiked] = useState(false);
+  media = [],
+  createdAt,
+  likeCount,
+  liked,
+  location,
+  tags,
+  isOwner,
+  onLike,
+  onDelete,
+  onUpdate,
+}: PostCardProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [bgColor, setBgColor] = useState(COLORS[0]);
+  const [isHovering, setIsHovering] = useState(false); // 新增 hover 状态
+  const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const {user} = useUser();
+
+  // 2. 核心逻辑：确定封面
+  const coverMedia = media.length > 0 ? media[0] : null;
+  const isVideo = coverMedia?.type === 'video';
+  const isMultiple = media.length > 1;
+
+  // 如果是视频，使用 coverUrl；如果是图片，使用 url
+  // 如果视频没有 coverUrl，回退到 null (或者可以用一个默认图)
+  const coverImageUrl = isVideo 
+    ? (coverMedia?.coverUrl || null) 
+    : coverMedia?.url;
+
+  // Color Logic
+  const getRandomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+
+  function lightenOrDarkenHex(hex: string | undefined, percent: number) {
+    if (!hex || !/^#[0-9A-F]{6}$/i.test(hex)) return "#000000";
+    const num = parseInt(hex.replace("#", ""), 16),
+      amt = Math.round(2.55 * percent * 100),
+      R = (num >> 16) + amt,
+      G = (num >> 8 & 0x00FF) + amt,
+      B = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+  }
+
+  useEffect(() => {
+    setBgColor(getRandomColor());
+  }, []);
+
+  const darkedColor = lightenOrDarkenHex(bgColor, -0.2);
 
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setLiked(!liked);
-    setLikes(prev => liked ? prev - 1 : prev + 1);
+     if (!user) {
+      
+      setIsOpen(false);
+      
+      setTimeout(() => {
+         onLike(id, liked);
+      }, 100);
+      
+      return; 
+    }
+    onLike(id, liked);
   };
+
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+    if (isVideo && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    if (isVideo && videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  };
+
+  const truncatedContent = content.length > 19 ? content.slice(0, 19) + '...' : content;
+  const truncatedDescription = content.length > 50 ? content.slice(0, 50) + '...' : content;
+
+   const openDeleteDialog = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteDialogOpen(true);
+  };
+
+  const executeDelete = async () => {
+    try {
+      await api.delete(`/posts/${id}`);
+      if (onDelete) {
+        onDelete(id);
+      }
+    } catch (error) {
+      console.error("删除失败", error);
+      alert("删除失败，请稍后重试");
+    } finally {
+      // 无论成功失败，都关闭弹窗
+      setDeleteDialogOpen(false);
+    }
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSuccess = (newContent: string, newTags: string[]) => {
+    if (onUpdate) {
+      onUpdate(id, newContent, newTags);
+    }
+  };
+
 
   return (
     <>
-      {/* 关键：外层 div 不要 layoutId！ */}
+      {/* 挂载编辑弹窗 */}
+      <EditPostModal 
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        postId={id}
+        initialContent={content}
+        initialTags={tags}
+        onSuccess={handleEditSuccess}
+      />
+       <ConfirmDialog 
+        isOpen={isDeleteDialogOpen}
+        title="删除帖子"
+        message="确定要删除这条帖子吗？此操作无法恢复。"
+        confirmText="确定删除"
+        cancelText="取消"
+        onConfirm={executeDelete} 
+        onCancel={() => setDeleteDialogOpen(false)}
+      />
       <div
         onClick={() => setIsOpen(true)}
-        className="cursor-pointer group overflow-hidden rounded-xl bg-white dark:bg-neutral-900 shadow-sm hover:shadow-lg transition-all duration-300"
+        className="break-inside-avoid mb-4 cursor-pointer group rounded-[16px] bg-white dark:bg-neutral-900 transition-all duration-300 hover:shadow-lg border border-transparent dark:border-neutral-800"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
-        <div className="p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <img src={avatar} alt={name} className="w-10 h-10 rounded-full ring-2 ring-white" />
-            <div className="font-medium text-sm">{name}</div>
-          </div>
+        <div className="relative w-full aspect-[3/4] overflow-hidden rounded-[16px] bg-gray-100 dark:bg-neutral-800">
+          
+          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none" />
 
-          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mb-3">
-            {content}
-          </p>
+          {coverMedia ? (
+            <div className="w-full h-full relative">
+              
+            
+              {coverImageUrl && (
+                <img
+                  src={coverImageUrl}
+                  alt="post cover"
+                  className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                    (isVideo && isHovering) ? 'opacity-0' : 'opacity-100'
+                  }`}
+                  loading="lazy"
+                />
+              )}
 
-          {/* 关键：只有图片用 layoutId + 强制圆角 */}
-          {image && (
-            <motion.div
-              className="mb-3 rounded-xl overflow-hidden" // 包一层保证裁剪
-            >
-              <motion.img
-                layoutId={`image-${id}`} // 唯一动画源！
-                src={image}
-                alt="post"
-                className="w-full h-56 object-cover"
-                style={{ borderRadius: "12px" }} // 强制圆角，永不丢失！
-              />
-            </motion.div>
-          )}
-
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <button onClick={handleLike} className="flex items-center gap-2 hover:text-red-500 transition">
-              <Heart size={18} className={liked ? "fill-red-500 text-red-500" : ""} />
-              <span>{likes}</span>
-            </button>
-            <div className="flex items-center gap-2">
-              <MessageCircle size={18} />
-              <span>{comments}</span>
+              {/* 如果是视频，Video 标签放在图片下方，或者 hover 时显示 */}
+              {isVideo && (
+                 <div className={`absolute inset-0 w-full h-full bg-black ${isHovering ? 'z-10' : '-z-10'}`}>
+                   <video 
+                     ref={videoRef}
+                     src={coverMedia.url} // 视频实际播放地址
+                     className="w-full h-full object-cover"
+                     muted
+                     loop
+                     playsInline
+                   />
+                    {/* Play Indicator (Only visible when not hovering) */}
+                   <div className="absolute top-2 right-2 z-30 opacity-100 transition-opacity duration-300 group-hover:opacity-0">
+                      <div className="bg-black/30 backdrop-blur-sm rounded-full p-1.5">
+                          <Play size={12} className="text-white fill-white ml-0.5" />
+                      </div>
+                   </div>
+                 </div>
+              )}
+              
+              {isMultiple && (
+                <div className="absolute top-2 right-2 z-30">
+                  <div className="bg-black/40 backdrop-blur-sm rounded-full p-1.5">
+                    <Layers size={12} className="text-white" />
+                  </div>
+                </div>
+              )}
             </div>
+          ) : (
+           <TextPostCover 
+              content={truncatedContent} 
+              bgColor={bgColor} 
+              accentColor={darkedColor} 
+            />
+          )}
+        </div>
+
+        <div className="px-3 py-3">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 line-clamp-2 mb-2 leading-snug">
+            {truncatedDescription}
+          </p>
+          
+          <div className="flex flex-row justify-between items-center">
+            <div className="flex flex-row items-center gap-2 group/author">
+              <img src={avatar} alt={name} className="w-5 h-5 rounded-full object-cover ring-1 ring-gray-100" />
+              <span className="text-xs text-gray-500 font-medium truncate max-w-[100px]">{name}</span>
+            </div>
+             {isOwner && (
+              <>
+                <button 
+                         onClick={handleEditClick}
+                         className="text-gray-400 hover:text-blue-500 transition-colors"
+                         title="编辑帖子"
+                       >
+                         <Edit2 size={16} />
+                </button>
+                <button 
+                  onClick={openDeleteDialog}
+                  className="text-gray-400 hover:text-red-500 transition-colors"
+                  title="删除帖子"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </>
+              )}
+            <button onClick={handleLike} className="flex items-center gap-1 group/like">
+              <Heart 
+                size={16} 
+                className={`transition-colors duration-200 ${liked ? "fill-red-500 text-red-500" : "text-gray-400 group-hover/like:text-gray-600"}`} 
+              />
+              <span className="text-xs text-gray-500 group-hover/like:text-gray-700">{likeCount}</span>
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* 详情弹窗 */}
+      </div>
+      
       <PostDetailModal
         id={id}
         isOpen={isOpen}
@@ -81,15 +286,15 @@ export default function PostCard({
         avatar={avatar}
         name={name}
         content={content}
-        image={image}
-        likes={likes}
-        comments={comments}
+        media={media}
+        likes={likeCount}
         liked={liked}
-        onLike={() => {
-          setLiked(!liked);
-          setLikes(prev => liked ? prev - 1 : prev + 1);
-        }}
-        onCommentAdd={() => setComments(c => c + 1)}
+        createdAt={createdAt}
+        location={location}
+        tags={tags}
+        bgColor={bgColor}
+        accentColor={darkedColor}
+        handleLike={handleLike}
       />
     </>
   );

@@ -2,7 +2,7 @@ import ProfileTabs from "@/components/ProfileTabs";
 import UserInfoEditCard from "@/components/UserInfoEditCard";
 import { useState } from "react";
 import { useUser } from "@/data/UserContext";
-
+import MyPostList from "@/components/MyPostList";
 
 
 export default function ProfilePage() {
@@ -73,6 +73,9 @@ export default function ProfilePage() {
                 
             </div>
             <ProfileTabs />
+             <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+                <MyPostList />
+            </div>
             {/* 点击按钮后显示的组件 */}
             {isEditOpen && <UserInfoEditCard onClose={() => setIsEditOpen(false)} />}
         </div>

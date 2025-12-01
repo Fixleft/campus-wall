@@ -8,7 +8,7 @@ import { HomePage } from '@/pages/HomePage.tsx'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <UserProvider>
-      <HomePage />
+        <HomePage />
     </UserProvider>
   </StrictMode>,
 )

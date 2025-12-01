@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import {
   IconArrowLeft
@@ -9,8 +9,11 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Square from "@/pages/Square";
 import ProfilePage from "./ProfilePage";
-import LoginCard from "@/components/LoginCard";
-import { useUser } from "@/data/UserContext";   // 你的路径没问题！
+import { useUser } from "@/data/UserContext";   
+import ConfirmDialog from "@/components/ConfirmDialog";
+import AuthDialog from "@/components/AuthDialog";
+import { eventEmitter } from '@/utils/api';
+
 
 const SettingsPage = () => (
   <div className="p-10">
@@ -18,20 +21,49 @@ const SettingsPage = () => (
     <p>偏好设置、主题、通知等</p>
   </div>
 );
+const FriendsPage = () => (
+  <div className="p-10">
+    <h1 className="text-3xl font-bold">好友</h1>
+    <p>加好友</p>
+  </div>
+);
+const EmailPage = () => (
+  <div className="p-10">
+    <h1 className="text-3xl font-bold">私信</h1>
+    <p>发私信</p>
+  </div>
+);
 
-type Page = "square" | "profile" | "settings" | "friends";
+
+
+
+type Page = "square" | "profile" | "settings" | "friends" | "email";
 
 export function HomePage() {
   const [currentPage, setCurrentPage] = useState<Page>("square");
   const [open, setOpen] = useState(false);
-  const [loginCardOpen, setLoginCardOpen] = useState(false);
-
-
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const { user, loading, logout } = useUser();
+  const [loginCardOpen, setLoginCardOpen] = useState(false);
+ 
+  useEffect(() => {
+    // 监听 'show-login-dialog' 事件
+    const handleShowLoginDialog = () => {
+      setLoginCardOpen(true);
+    };
+
+    // 添加事件监听器
+    eventEmitter.addEventListener('show-login-dialog', handleShowLoginDialog);
+
+    // 清理监听器
+    return () => {
+      eventEmitter.removeEventListener('show-login-dialog', handleShowLoginDialog);
+    };
+  }, []);
 
   const links = [
     {
-      label: "首页",
+      label: "广场",
       href: "#",
       page: "square" as Page,
       icon: <svg 
@@ -67,6 +99,17 @@ export function HomePage() {
       >
       <path d="M96 192C96 130.1 146.1 80 208 80C269.9 80 320 130.1 320 192C320 253.9 269.9 304 208 304C146.1 304 96 253.9 96 192zM32 528C32 430.8 110.8 352 208 352C305.2 352 384 430.8 384 528L384 534C384 557.2 365.2 576 342 576L74 576C50.8 576 32 557.2 32 534L32 528zM464 128C517 128 560 171 560 224C560 277 517 320 464 320C411 320 368 277 368 224C368 171 411 128 464 128zM464 368C543.5 368 608 432.5 608 512L608 534.4C608 557.4 589.4 576 566.4 576L421.6 576C428.2 563.5 432 549.2 432 534L432 528C432 476.5 414.6 429.1 385.5 391.3C408.1 376.6 435.1 368 464 368z"/></svg>
     },
+     {
+      label: "消息",
+      href: "#",
+      page: "email" as Page,
+      icon: <svg
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 640 640"
+      className="h-5 w-5 shrink-0 text-black dark:text-white"
+      fill="currentColor"
+      >
+      <path d="M64 416L64 192C64 139 107 96 160 96L480 96C533 96 576 139 576 192L576 416C576 469 533 512 480 512L360 512C354.8 512 349.8 513.7 345.6 516.8L230.4 603.2C226.2 606.3 221.2 608 216 608C202.7 608 192 597.3 192 584L192 512L160 512C107 512 64 469 64 416z"/></svg>    },
     {
       label: "设置",
       href: "#",
@@ -87,6 +130,8 @@ export function HomePage() {
       case "square": return <Square />;
       case "profile": return <ProfilePage />;
       case "settings": return <SettingsPage />;
+      case "friends": return <FriendsPage />;
+      case "email": return <EmailPage />;
       default: return <Square />;
     }
   };
@@ -108,11 +153,11 @@ export function HomePage() {
                   if (link.page === "profile" && !user) {
                     setLoginCardOpen(true); 
                   } else {
-                    setCurrentPage(link.page); // 已登录或其他页面直接切换
+                    setCurrentPage(link.page); 
                   }
                 }}
                   className={cn(
-                    "rounded-md transition-all cursor-pointer",
+                    "rounded-md transition-all cursor-pointer px-1",
                     currentPage === link.page
                       ? "bg-neutral-200 dark:bg-neutral-700 shadow-sm"
                       : "hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -157,30 +202,41 @@ export function HomePage() {
 
             {/* 退出登录按钮 */}
             {user && (
+            <>
               <SidebarLink
                 link={{
                   label: "退出登录",
                   href: "#",
                   icon: <IconArrowLeft className="h-5 w-5" />,
                 }}
-                onClick={() => {
-                  if (confirm("确定要退出登录吗？")) {
-                    logout();
-                  }
-                }}
+                onClick={() => setLogoutDialogOpen(true)}
               />
-            )}
+
+              <ConfirmDialog
+                isOpen={logoutDialogOpen}
+                title="退出登录"
+                message="你确定要退出登录吗？"
+                confirmText="退出"
+                cancelText="取消"
+                onConfirm={()=>{
+                   logout();
+                   setCurrentPage("square");
+                }}
+                onCancel={() => setLogoutDialogOpen(false)}
+              />
+            </>
+          )}
           </div>
         </SidebarBody>
       </Sidebar>
 
-      {/* 登录弹窗 */}
       {loginCardOpen && (
-        <LoginCard
+        <AuthDialog
+          isOpen={loginCardOpen}
           onClose={() => setLoginCardOpen(false)}
         />
       )}
-
+      
       {/* 主内容区 */}
       <div className="flex flex-1 flex-col bg-white dark:bg-neutral-900">
         <div className="flex-1 overflow-y-auto border border-neutral-200 dark:border-neutral-700">

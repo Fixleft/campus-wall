@@ -1,18 +1,21 @@
 package com.campuswall.service;
 
-import com.campuswall.dto.UserInfoDto;
-import com.campuswall.dto.UserLoginDto;
-import com.campuswall.dto.UserProfileDto;
-import com.campuswall.dto.UserRegisterDto;
+import com.campuswall.dto.*;
+import com.campuswall.entity.Post;
 import com.campuswall.entity.User;
+import com.campuswall.repository.PostRepository;
 import com.campuswall.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.Random;
+
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +23,17 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PostRepository postRepository;
+    private final PostService postService;
+
+    //获取用户作品列表
+    public Page<PostResponseDto> getUserPosts(int page, int size, String uid) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Post> posts = postRepository.findByUidOrderByCreatedAtDesc(uid, pageable);
+
+        return posts.map(postService::convertToDTO);
+    }
+
     //用户注册
     public User register(UserRegisterDto dto) {
         if (userRepository.existsByName(dto.getName())) {
@@ -35,8 +49,8 @@ public class UserService {
 
     //用户登录
     public User login(UserLoginDto dto) {
-        User user = userRepository.findByNameAndUid(dto.getName(), dto.getUid())
-                .orElseThrow(() -> new RuntimeException("用户名或 UID 不存在"));
+        User user = userRepository.findByName(dto.getName())
+                .orElseThrow(() -> new RuntimeException("用户名不存在"));
         if (!passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
             throw new RuntimeException("密码错误");
         }

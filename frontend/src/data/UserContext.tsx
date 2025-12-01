@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect} from "react";
 import type { ReactNode } from "react";
 import api from "@/utils/api";
+import { resetLoginDialogState } from "@/utils/api";
 
 interface User {
   uid: string;
@@ -64,6 +65,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
+    resetLoginDialogState();
   };
 
   return (

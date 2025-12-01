@@ -23,6 +23,8 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // 点击头像区域选择文件
   const handleAvatarClick = () => {
@@ -37,6 +39,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
       alert('请上传图片文件');
       return;
     }
+    setUploadedFile(file);
     const reader = new FileReader();
     reader.onloadend = () => {
       setAvatarUrl(reader.result as string);
@@ -48,11 +51,25 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
+    setIsLoading(true);
     setError(null);
 
+    let finalAvatarUrl = avatarUrl;
+
     try {
+        if (uploadedFile) {
+        const formData = new FormData();
+        formData.append("file", uploadedFile);
+
+        const res = await api.post("/files/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        finalAvatarUrl = res.data; // 后端返回的永久 URL
+      }
+
       await api.put(`/users/${user.uid}/update`, {
-        avatar: avatarUrl,
+        avatar: finalAvatarUrl,
         name,
         gender,
         age,
@@ -67,6 +84,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
       setError(err.response?.data?.message || err.message || '更新失败');
     } finally {
       setSaving(false);
+      setIsLoading(false);  
     }
   };
 
@@ -75,7 +93,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
     if (user) {
       setAvatarUrl(user.avatar || '');
       setName(user.name || '');
-      setGender(user.gender || '男');
+      setGender(user.gender || '');
       setAge(user.age || 0);
       setHometown(user.hometown || '');
       setSignature(user.signature || '');
@@ -143,7 +161,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
                 >
                   <option>男</option>
                   <option>女</option>
-                  <option>其他</option>
+                  <option>保密</option>
                 </select>
               </div>
 
@@ -191,7 +209,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
                 className="px-8 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition"
                 disabled={saving}
               >
-                保存更改
+                {isLoading ? '保存中...' : '保存更改'}
               </button>
             </div>
           </div>

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
 
 @Component
 public class JwtUtil {
@@ -28,7 +29,7 @@ public class JwtUtil {
                 .setSubject(user.getUid()) // sub: uid
                 .claim("name", user.getName())
                 .claim("avatar", user.getAvatar())
-                .claim("role", "user")
+                .claim("roles", List.of("ROLE_USER"))
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + EXPIRATION))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
@@ -47,11 +48,17 @@ public class JwtUtil {
 
     // 验证 token
     public boolean validateToken(String token) {
-        try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+    try {
+        Jwts.parserBuilder()
+            .setSigningKey(getSigningKey())
+            .build()
+            .parseClaimsJws(token);
+        return true;
+    } catch (ExpiredJwtException e) {
+        // 明确区分：过期也算无效
+        return false;
+    } catch (JwtException | IllegalArgumentException e) {
+        return false;
     }
+}
 }

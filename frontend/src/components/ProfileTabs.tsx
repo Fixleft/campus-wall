@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
 export default function ProfileTabs() {
-  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "comments" | "anonymous">("posts");
+  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "comments">("posts");
   const [isSticky, setIsSticky] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -10,7 +10,7 @@ export default function ProfileTabs() {
     { key: "posts", label: "帖子" },
     { key: "likes", label: "喜欢" },
     { key: "comments", label: "评论过的" },
-    { key: "anonymous", label: "匿名" },
+   
   ];
 
   useEffect(() => {

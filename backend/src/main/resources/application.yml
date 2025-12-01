@@ -3,9 +3,14 @@ server:
   port: 8080
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 1000MB
+
   # 数据库配置
   datasource:
-    url: jdbc:mysql://localhost:3306/campuswall?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/campuswall
     username: root
     password: 123456
 
@@ -14,13 +19,15 @@ spring:
       ddl-auto: update
     show-sql: true
 
-# minIO 配置
-minio:
-  endpoint: http://localhost:9000
-  accessKey: admin
-  secretKey: password
-  bucket: campuswall
 
 # src/main/resources/application.yml
 jwt:
   secret: campus-wall-2025-super-secret-key-that-no-one-can-guess-1145141919810
+
+minio:
+  url: http://127.0.0.1:9000  # 永久 URL 的 Host
+  access-key: chaosama
+  secret-key: chaosama
+  bucket-name: campus-wall
+
+
