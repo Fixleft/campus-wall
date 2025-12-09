@@ -29,5 +29,13 @@ minio:
   access-key: chaosama
   secret-key: chaosama
   bucket-name: campus-wall
-
-
+deepseek:
+  api-key: sk-3cf65eb0efd0417981924a22b3a6dea7
+  base-url: https://api.deepseek.com
+  model: deepseek-chat
+  bot-uid: 303321
+weather:
+  api-url: https://restapi.amap.com/v3/weather/weatherInfo
+  api-key: 9f5b8868b719b71b683af8eda7401b7e
+  city-id: 310000
+  city-name: "上海市松江区"     # 用于显示在文案里

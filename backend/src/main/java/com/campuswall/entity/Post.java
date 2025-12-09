@@ -45,6 +45,9 @@ public class Post {
     @Column(name = "view_count", nullable = false)
     private Integer viewCount = 0;
 
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private Integer status = 0;
+
     @Column(nullable = false)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private LocalDateTime createdAt;

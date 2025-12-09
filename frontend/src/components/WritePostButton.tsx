@@ -1,18 +1,27 @@
 import { useState } from "react"
 import PostUploadCard from "@/components/PostUploadCard";
-
+import AuthDialog from "@/components/AuthDialog";
+import { useUser } from "@/context/UserContext";
 
 export default function WritePostButton() {
     const [isOpen, setOpen] = useState(false);
+    const [loginCardOpen, setLoginCardOpen] = useState(false);
+    const { user } = useUser();
+   
 
     function handleClick(){
+        if (!user) {
+            setLoginCardOpen(true);
+            return;
+        }
         setOpen(!isOpen);
+        
     }
     return (
         <>
             <button 
             onClick={handleClick}
-            className="fixed bottom-6 right-6  bg-black/90 hover:bg-black/70 rounded-full p-3.5 shadow-lg z-51">
+            className="fixed bottom-6 right-6 bg-black/90 hover:bg-black/70 rounded-full p-3.5 shadow-lg z-51">
                 <svg 
                 xmlns="http://www.w3.org/2000/svg" 
                 viewBox="0 0 640 640"
@@ -23,6 +32,12 @@ export default function WritePostButton() {
                 </svg>
             </button>
             <PostUploadCard isOpen={isOpen} handleClick={handleClick} />
+            {loginCardOpen && (
+                    <AuthDialog
+                      isOpen={loginCardOpen}
+                      onClose={() => setLoginCardOpen(false)}
+                    />
+                  )}
         </>
     );
 }

@@ -1,24 +1,28 @@
 import { Heart, Play, Layers } from "lucide-react";
 import * as React from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import PostDetailModal from "./PostDetailModal";
-import {useUser} from "@/data/UserContext"
 import { TextPostCover } from "./PuraTextCard";
 import { Trash2 ,Edit2 } from "lucide-react"; 
 import api from "@/utils/api"
 import ConfirmDialog from "./ConfirmDialog";
 import EditPostModal from "./EditPostModal";
+import { AnimatePresence, motion } from "framer-motion";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // 1. 更新类型定义
 export interface MediaType {
   type: 'image' | 'video';
   url: string;
   coverUrl?: string | null;
+  width?: number;  // 新增
+  height?: number; // 新增
 }
 
 interface PostCardProps {
   id: number;
   avatar: string;
+  uid: string;
   name: string;
   content: string;
   media: MediaType[];
@@ -31,6 +35,9 @@ interface PostCardProps {
   onLike: (postId: number, currentlyLiked: boolean) => void;
   onDelete?: (id: number) => void;
   onUpdate?: (id: number, newContent: string, newTags: string[]) => void;
+  isFriend: boolean;
+  isAnonymous?: boolean; 
+  status?: number;
 }
 
 const COLORS = [
@@ -41,6 +48,7 @@ const COLORS = [
 export default function PostCard({
   id,
   avatar,
+  uid,
   name,
   content,
   media = [],
@@ -53,6 +61,9 @@ export default function PostCard({
   onLike,
   onDelete,
   onUpdate,
+  isFriend,
+  isAnonymous = false,
+  status = 0,
 }: PostCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [bgColor, setBgColor] = useState(COLORS[0]);
@@ -60,18 +71,16 @@ export default function PostCard({
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const {user} = useUser();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // 2. 核心逻辑：确定封面
-  const coverMedia = media.length > 0 ? media[0] : null;
-  const isVideo = coverMedia?.type === 'video';
-  const isMultiple = media.length > 1;
-
-  // 如果是视频，使用 coverUrl；如果是图片，使用 url
-  // 如果视频没有 coverUrl，回退到 null (或者可以用一个默认图)
-  const coverImageUrl = isVideo 
-    ? (coverMedia?.coverUrl || null) 
-    : coverMedia?.url;
+  useEffect(() => {
+  if (errorMessage) {
+    const timer = setTimeout(() => {
+      setErrorMessage(null); 
+    }, 2000);
+    return () => clearTimeout(timer);
+  }
+}, [errorMessage]); 
 
   // Color Logic
   const getRandomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -92,18 +101,36 @@ export default function PostCard({
 
   const darkedColor = lightenOrDarkenHex(bgColor, -0.2);
 
+  // === 核心逻辑修改开始 ===
+  const coverMedia = media.length > 0 ? media[0] : null;
+  const isVideo = coverMedia?.type === 'video';
+  const isMultiple = media.length > 1;
+  
+  const coverImageUrl = isVideo 
+    ? (coverMedia?.coverUrl || null) 
+    : coverMedia?.url;
+
+  // 计算智能布局的 Class
+  const aspectRatioClass = useMemo(() => {
+    // 如果没有媒体或没有宽高数据，默认使用 3:4 (Portrait)
+    if (!coverMedia || !coverMedia.width || !coverMedia.height) {
+      return "aspect-[3/4]";
+    }
+
+    const ratio = coverMedia.width / coverMedia.height;
+
+    if (ratio > 1.2) {
+      return "aspect-[4/3]"; // 宽图/横屏视频
+    } else if (ratio < 0.8) {
+      return "aspect-[3/4]"; // 长图/竖屏视频
+    } else {
+      return "aspect-square"; // 方图
+    }
+  }, [coverMedia]);
+  // === 核心逻辑修改结束 ===
+
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
-     if (!user) {
-      
-      setIsOpen(false);
-      
-      setTimeout(() => {
-         onLike(id, liked);
-      }, 100);
-      
-      return; 
-    }
     onLike(id, liked);
   };
 
@@ -138,7 +165,7 @@ export default function PostCard({
       }
     } catch (error) {
       console.error("删除失败", error);
-      alert("删除失败，请稍后重试");
+      setErrorMessage("删除失败，请稍后重试");
     } finally {
       // 无论成功失败，都关闭弹窗
       setDeleteDialogOpen(false);
@@ -159,6 +186,20 @@ export default function PostCard({
 
   return (
     <>
+      <AnimatePresence>
+                {errorMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-4 left-4 right-4 z-50"
+                  >
+                    <Alert variant="destructive" className="rounded-lg bg-zinc-900 border border-red-900 text-red-500 shadow-xl py-4">
+                      <AlertDescription className="text-center text-sm">{errorMessage}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+              </AnimatePresence>
       {/* 挂载编辑弹窗 */}
       <EditPostModal 
         isOpen={isEditModalOpen}
@@ -183,7 +224,7 @@ export default function PostCard({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="relative w-full aspect-[3/4] overflow-hidden rounded-[16px] bg-gray-100 dark:bg-neutral-800">
+        <div className={`relative w-full ${aspectRatioClass} overflow-hidden rounded-[16px] bg-gray-100 dark:bg-neutral-800`}>
           
           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none" />
 
@@ -249,6 +290,12 @@ export default function PostCard({
               <img src={avatar} alt={name} className="w-5 h-5 rounded-full object-cover ring-1 ring-gray-100" />
               <span className="text-xs text-gray-500 font-medium truncate max-w-[100px]">{name}</span>
             </div>
+            {status === 1 && (
+              <div className="ml-2 px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full font-medium">
+                屏蔽中
+              </div>
+            )
+            }
              {isOwner && (
               <>
                 <button 
@@ -282,6 +329,7 @@ export default function PostCard({
       <PostDetailModal
         id={id}
         isOpen={isOpen}
+        uid={uid}
         onClose={() => setIsOpen(false)}
         avatar={avatar}
         name={name}
@@ -295,6 +343,8 @@ export default function PostCard({
         bgColor={bgColor}
         accentColor={darkedColor}
         handleLike={handleLike}
+        isFriend={isFriend}
+        isAnonymous={isAnonymous}
       />
     </>
   );

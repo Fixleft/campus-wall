@@ -1,10 +1,13 @@
 package com.campuswall.service;
 
-import com.campuswall.dto.PostMediaDto;
-import com.campuswall.dto.PostResponseDto;
-import com.campuswall.dto.PostUpdateDto;
+import com.campuswall.dto.*;
 import com.campuswall.entity.*;
+import com.campuswall.enums.NotificationType;
+import com.campuswall.event.LikeEvent;
+import com.campuswall.event.PostCreatedEvent;
 import com.campuswall.repository.*;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,7 +18,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -30,10 +32,175 @@ public class PostService {
     private final PostMediaRepository postMediaRepository;
     private final TagRepository tagRepository;
     private final UserRepository userRepository;
+    private final UserService userService;
     private final UserLikesPostRepository likesRepository;
     private final MinioService minioService;
     private final TagService tagService;
-    //编辑帖子
+    private final ApplicationEventPublisher eventPublisher;
+    private final FriendRequestRepository friendRequestRepository;
+    // ================= 查询相关 (已优化 N+1) =================
+    //管理员物理删除方法
+    @Transactional
+    public void deletePostPhysically(Long postId) {
+        if (!postRepository.existsById(postId)) {
+             throw new RuntimeException("帖子不存在");
+        }
+        likesRepository.deleteById_PostId(postId);
+        postRepository.deleteById(postId);
+    }
+
+    //屏蔽帖子
+    public void blockPost(Long postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(()->new RuntimeException("帖子不存在"));
+
+        post.setStatus(1);
+        postRepository.save(post);
+    }
+
+    //解除屏蔽帖子
+    public void unBlockPost(long postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(()->new RuntimeException("帖子不存在"));
+
+        post.setStatus(0);
+        postRepository.save(post);
+    }
+
+    //获取管理员帖子列表
+    public Page<PostResponseDto> searchAdminPosts(String keyword, Integer status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+
+        // 处理空字符串
+        if (keyword != null && keyword.trim().isEmpty()) {
+            keyword = null;
+        }
+        Page<Post> postPage = postRepository.searchPostsForAdmin(keyword, status, pageable);
+        return postPage.map(post -> convertToDTO(post, null, false, false));
+    }
+
+    /**
+     * 获取某用户(targetUid)点赞过的帖子列表
+     * @param page 页码
+     * @param size 每页数量
+     * @param targetUid 目标用户的UID（查看谁的点赞列表）
+     */
+    public Page<PostResponseDto> getUserPostsLiked(int page, int size, String targetUid) {
+        Pageable pageable = PageRequest.of(page, size);
+
+        // 1. 查库
+        Page<Post> posts = postRepository.findLikedPostsByUid(targetUid, pageable);
+
+        // 2. 转换 (使用 mapToPageDto 自动处理 N+1 和当前登录用户的点赞状态)
+        // 注意：这里传入 getCurrentUidOptional() 是为了判断"当前查看者"是否点赞了这些帖子
+        return mapToPageDto(posts, getCurrentUidOptional());
+    }
+
+    /**
+     * 获取某用户(targetUid)发布的作品列表
+     */
+    public Page<PostResponseDto> getUserPosts(int page, int size, String targetUid) {
+        Pageable pageable = PageRequest.of(page, size);
+        //游客查询
+        String currentUid = null;
+        try {
+            currentUid = SecurityContextHolder.getContext().getAuthentication().getName();
+        } catch (Exception e) {
+
+        }
+        // 1. 查库
+        Page<Post> posts;
+        if (targetUid.equals(currentUid)) {
+            posts = postRepository.findByUidOrderByCreatedAtDesc(targetUid, pageable);
+        } else {
+            posts = postRepository.findActivePostsByUid(targetUid, pageable);
+        }
+        // 2. 转换
+        return mapToPageDto(posts, getCurrentUidOptional());
+    }
+
+     public long getLikeCount(Long postId) {
+        return likesRepository.countById_PostId(postId);
+    }
+
+    public boolean isLiked(String userId, Long postId) {
+        if (userId == null || postId == null) {
+            return false;
+        }
+        return likesRepository.existsById(new UserLikesPostId(userId, postId));
+    }
+
+    /**
+     * 搜索帖子
+     */
+    public Page<PostResponseDto> searchPosts(String keyword, String currentUid, Pageable pageable) {
+        if (!StringUtils.hasText(keyword)) {
+            return Page.empty();
+        }
+        Page<Post> postPage = postRepository.searchByKeyword(keyword, pageable);
+        return mapToPageDto(postPage, currentUid);
+    }
+
+    /**
+     * 获取最新帖子列表
+     */
+    public Page<PostResponseDto> getLatestPosts(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Post> postPage = postRepository.findAllActivePosts(pageable);
+        return mapToPageDto(postPage, getCurrentUidOptional());
+    }
+
+    /**
+     * ★★★ 核心优化方法：批量处理点赞状态，防止 N+1 ★★★
+     */
+    private Page<PostResponseDto> mapToPageDto(Page<Post> postPage, String currentUid) {
+        if (postPage.isEmpty()) {
+            return Page.empty();
+        }
+
+        List<Post> posts = postPage.getContent();
+
+        // 1. 提取 ID 列表
+        List<Long> postIds = posts.stream().map(Post::getId).collect(Collectors.toList());
+
+        // 提取所有作者 UID (过滤掉匿名贴和自己)
+        List<String> authorUids = posts.stream()
+                .filter(p -> !p.getIsAnonymous() && p.getUid() != null && !p.getUid().equals(currentUid))
+                .map(Post::getUid)
+                .distinct()
+                .collect(Collectors.toList());
+
+        // 2. 批量查询数据
+        Set<Long> likedPostIds = new HashSet<>();
+        Set<String> myFriendUids = new HashSet<>(); // 存放好友UID
+
+        if (StringUtils.hasText(currentUid) && !"anonymousUser".equals(currentUid)) {
+            // 查点赞
+            likedPostIds = likesRepository.findLikedPostIdsByUidAndPostIds(currentUid, postIds);
+
+            // ★★★ 查好友 (批量) ★★★
+            if (!authorUids.isEmpty()) {
+                myFriendUids = friendRequestRepository.findFriendUids(currentUid, authorUids);
+            }
+        }
+
+        // 3. 转换 DTO
+        Set<Long> finalLikedPostIds = likedPostIds;
+        Set<String> finalFriendUids = myFriendUids;
+
+        return postPage.map(post -> {
+            boolean isLiked = finalLikedPostIds.contains(post.getId());
+            // 判断是否好友：必须是非匿名，且在好友集合中
+            boolean isFriend = !post.getIsAnonymous() && finalFriendUids.contains(post.getUid());
+
+            return convertToDTO(post, currentUid, isLiked, isFriend); // 传入 isFriend
+        });
+    }
+
+
+
+    // ================= 写入相关 =================
+
     @Transactional
     public void updatePost(Long postId, PostUpdateDto postUpdateDto, String currentUid) {
         Post post = postRepository.findById(postId)
@@ -46,17 +213,16 @@ public class PostService {
         if (postUpdateDto.getTags() != null) {
             List<Tag> newTagsList = tagService.findOrCreateTags(postUpdateDto.getTags());
 
-
-        if (post.getTags() == null) {
-         post.setTags(new HashSet<>(newTagsList));
-        } else {
+            if (post.getTags() == null) {
+                post.setTags(new HashSet<>(newTagsList));
+            } else {
                 post.getTags().clear();
                 post.getTags().addAll(newTagsList);
             }
         }
         postRepository.save(post);
     }
-    //删除帖子
+
     @Transactional
     public void deletePost(Long postId, String currentUid) {
         Post post = postRepository.findById(postId)
@@ -64,98 +230,64 @@ public class PostService {
         if (!post.getUid().equals(currentUid)) {
             throw new AccessDeniedException("无权限删除他人的帖子");
         }
-        //删除帖子下所以点赞
         likesRepository.deleteById_PostId(postId);
-        //后续删除帖子所有评论
         postRepository.delete(post);
     }
 
-    //获取帖子列表
-    public Page<PostResponseDto> getLatestPosts(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        Page<Post> posts = postRepository.findAllByOrderByCreatedAtDesc(pageable);
+    /**
+     * 点赞/取消点赞
+     * 优化：手动更新内存对象，确保返回数据一致性
+     */
+    @Transactional
+    public PostResponseDto toggleLike(String userId, Long postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("帖子不存在"));
 
-        return posts.map(this::convertToDTO);
+        UserLikesPostId likeId = new UserLikesPostId(userId, postId);
+        boolean isLikedNow;
+
+        if (likesRepository.existsById(likeId)) {
+            // 取消点赞
+            likesRepository.deleteById(likeId);
+            postRepository.decrementLikeCount(postId);
+            // 手动更新内存，防止返回旧数据
+            post.setLikeCount(Math.max(0, post.getLikeCount() - 1));
+            isLikedNow = false;
+        } else {
+            // 点赞
+            likesRepository.save(new UserLikesPost(userId, postId));
+            postRepository.incrementLikeCount(postId);
+            // 手动更新内存
+            post.setLikeCount(post.getLikeCount() + 1);
+            isLikedNow = true;
+             eventPublisher.publishEvent(new LikeEvent(
+                this,
+                userId,         // 发起人
+                post.getUid(),  // 接收人 (帖子作者)
+                postId,         // 帖子ID
+                null,           // 评论ID (这里是赞帖子，所以为 null)
+                NotificationType.LIKE_POST // 类型
+            ));
+        }
+
+        return convertToDTO(post, userId, isLikedNow, false);
     }
 
-
-    public PostResponseDto convertToDTO(Post post) {
-    PostResponseDto dto = new PostResponseDto();
-
-    dto.setId(post.getId());
-    dto.setContent(post.getContent());
-    dto.setLocation(post.getLocation());
-    dto.setAnonymous(post.getIsAnonymous());
-    dto.setLikeCount(post.getLikeCount());
-    dto.setCommentCount(post.getCommentCount());
-    dto.setViewCount(post.getViewCount());
-    dto.setCreatedAt(post.getCreatedAt());
-
-
-    String currentUid = "anonymousUser"; // 默认值，防止未登录空指针
-    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-        currentUid = auth.getName();
-    }
-
-    boolean isOwner = post.getUid() != null && post.getUid().equals(currentUid);
-    dto.setOwner(isOwner);
-
-    // 1. 作者信息
-    if (post.getIsAnonymous()) {
-        dto.setAuthorName("匿名发布");
-        dto.setAuthorAvatar("http://127.0.0.1:9000/campus-wall/default-avatar.png");
-        dto.setAuthorUid(null);
-
-    } else if (post.getUser() != null) {
-        // 实名状态：正常返回
-        dto.setAuthorName(post.getUser().getName());
-        dto.setAuthorAvatar(post.getUser().getAvatar());
-        dto.setAuthorUid(post.getUid());
-    }
-
-    // 2. Media 列表
-    dto.setMediaUrls(
-    post.getMediaList()
-        .stream()
-        .map(media -> new PostMediaDto(media.getUrl(), media.getType(), media.getCoverUrl()))
-        .collect(Collectors.toList())
-    );
-    if (post.getTags() != null) {
-        dto.setTags(
-            post.getTags().stream()
-                .map(Tag::getName) // 这里调用 Tag 实体的 getName 方法
-                .collect(Collectors.toList())
-        );
-    } else {
-        dto.setTags(new ArrayList<>());
-    }
-
-    String currentUserId = SecurityContextHolder.getContext()
-            .getAuthentication()
-            .getName();   // 就是 uid！
-    boolean isLiked = likesRepository.existsById(
-    new UserLikesPostId(currentUserId, post.getId())
-    );
-    dto.setIsLiked(isLiked);
-
-    return dto;
-}
-
-    //上传帖子
     @Transactional(rollbackFor = Exception.class)
     public Post createPost(String uid,
                            String content,
                            String location,
                            boolean isAnonymous,
-                           List<String> mediaUrls,
+                           List<MediaItemRequest> mediaItems,
                            List<String> tagNames) throws Exception {
 
-        // 1. 查找用户
         User user = userRepository.findById(uid)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在: " + uid));
+        if (userService.isMuted(user)) {
 
-        // 2. 创建 Post 实体
+            throw new RuntimeException("您已被禁言，解封时间：" + user.getMuteEndTime());
+        }
+
         Post post = new Post();
         post.setUid(uid);
         post.setContent(StringUtils.hasText(content) ? content.trim() : "");
@@ -163,7 +295,6 @@ public class PostService {
         post.setIsAnonymous(isAnonymous);
         post.setUser(user);
 
-        // 3. 处理标签（自动复用或创建）
         if (tagNames != null && !tagNames.isEmpty()) {
             List<Tag> tags = tagNames.stream()
                     .map(String::trim)
@@ -176,140 +307,149 @@ public class PostService {
                                 return tagRepository.save(newTag);
                             }))
                     .toList();
-            Set<Tag> SetTags = new HashSet<>(tags);
-            post.setTags(SetTags);
+            post.setTags(new HashSet<>(tags));
         }
 
-        // 4. 先保存 Post（生成 ID）
         Post savedPost = postRepository.save(post);
 
-        // 5. 处理文件上传（图片 + 视频自动生成封面）
-        if (mediaUrls != null && !mediaUrls.isEmpty()) {
-            for (String url : mediaUrls) {
-                if (!StringUtils.hasText(url)) continue;
+        if (mediaItems != null && !mediaItems.isEmpty()) {
+            List<PostMedia> mediaList = new ArrayList<>();
+
+            for (MediaItemRequest item : mediaItems) {
+                if (!StringUtils.hasText(item.getUrl())) continue;
 
                 PostMedia media = new PostMedia();
                 media.setPost(savedPost);
-                media.setUrl(url);
+                media.setUrl(item.getUrl());
+                media.setWidth(item.getWidth() != null ? item.getWidth() : 0);
+                media.setHeight(item.getHeight() != null ? item.getHeight() : 0);
 
-                if (isVideoFile(url)) {
-                    // --- 视频处理逻辑 ---
+                if (isVideoFile(item.getUrl()) || "video".equals(item.getType())) {
                     media.setType("video");
                     File tempCover = null;
                     try {
-                        // 1. 调用 FFmpeg 生成本地临时封面
-                        tempCover = generateVideoCover(url);
+                        tempCover = generateVideoCover(item.getUrl());
+                        MediaItemRequest coverResult = minioService.uploadLocalFile(tempCover);
+                        media.setCoverUrl(coverResult.getUrl());
 
-                        // 2. 上传到 Minio
-                        String coverUrl = minioService.uploadFile(tempCover);
-
-                        // 3. 设置封面 URL
-                        media.setCoverUrl(coverUrl);
+                        // 视频宽高修正
+                        if (media.getWidth() == 0 || media.getHeight() == 0) {
+                            media.setWidth(coverResult.getWidth());
+                            media.setHeight(coverResult.getHeight());
+                        }
                     } catch (Exception e) {
-                        e.printStackTrace();
-                        // 封面生成失败不应阻断发帖，设为 null 即可
-                        // 前端 PostCard 组件已处理 null 封面的情况（显示黑底视频）
+                        e.printStackTrace(); // 记录日志，但不阻断发帖
                         media.setCoverUrl(null);
                     } finally {
-                        // 4. 清理临时文件
-                        if (tempCover != null && tempCover.exists()) {
-                            tempCover.delete();
-                        }
+                        if (tempCover != null && tempCover.exists()) tempCover.delete();
                     }
                 } else {
-                    // --- 图片处理逻辑 ---
                     media.setType("image");
                     media.setCoverUrl(null);
                 }
 
                 postMediaRepository.save(media);
-
-                // 确保 entity 中的 list 也更新，以便返回给前端完整数据
-                if (savedPost.getMediaList() == null) {
-                    savedPost.setMediaList(new ArrayList<>());
-                }
-                savedPost.getMediaList().add(media);
+                mediaList.add(media);
             }
+            savedPost.setMediaList(mediaList);
         }
-
+        eventPublisher.publishEvent(new PostCreatedEvent(this, savedPost));
         return savedPost;
     }
 
-    // ================= 辅助方法 =================
+    // ================= 辅助/内部方法 =================
 
     /**
-     * 判断是否为视频 URL
+     * 统一的 DTO 转换方法
      */
+    private PostResponseDto convertToDTO(Post post, String currentUid, boolean isLiked, boolean isFriend) {
+        PostResponseDto dto = new PostResponseDto();
+
+        dto.setId(post.getId());
+        dto.setContent(post.getContent());
+        dto.setLocation(post.getLocation());
+        dto.setAnonymous(post.getIsAnonymous());
+        dto.setLikeCount(post.getLikeCount());
+        dto.setCommentCount(post.getCommentCount());
+        dto.setViewCount(post.getViewCount());
+        dto.setCreatedAt(post.getCreatedAt());
+        dto.setStatus(post.getStatus());
+        boolean isOwner = post.getUid() != null && post.getUid().equals(currentUid);
+        dto.setOwner(isOwner);
+
+        if (post.getIsAnonymous()) {
+            dto.setAuthorName("匿名发布");
+            // 建议将此 URL 配置在 application.yml 中
+            dto.setAuthorAvatar("http://127.0.0.1:9000/campus-wall/default-avatar.png");
+            dto.setAuthorUid(null);
+        } else if (post.getUser() != null) {
+            dto.setAuthorName(post.getUser().getName());
+            dto.setAuthorAvatar(post.getUser().getAvatar());
+            dto.setAuthorUid(post.getUid());
+        }
+
+        // 避免 LazyLoading 异常，这里最好确保 Entity 里的 List 已经被初始化
+        // 如果使用了 EntityGraph 就不需要担心，否则这里可能会触发 N+1 SQL
+        if (post.getMediaList() != null) {
+            dto.setMedia(post.getMediaList().stream()
+                    .map(media -> new PostMediaDto(media.getUrl(), media.getType(), media.getCoverUrl(), media.getWidth(), media.getHeight()))
+                    .collect(Collectors.toList()));
+        } else {
+            dto.setMedia(Collections.emptyList());
+        }
+
+        if (post.getTags() != null) {
+            dto.setTags(post.getTags().stream().map(Tag::getName).collect(Collectors.toList()));
+        } else {
+            dto.setTags(Collections.emptyList());
+        }
+
+        dto.setIsLiked(isLiked);
+        dto.setFriend(isFriend);
+        return dto;
+    }
+
+    private String getCurrentUidOptional() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            return auth.getName();
+        }
+        return null; // 或者返回 "anonymousUser"
+    }
+
     private boolean isVideoFile(String url) {
-        // 简单后缀判断，可根据需求扩展
         return url != null && url.matches("(?i).*\\.(mp4|mov|avi|wmv|flv|webm|mkv)$");
     }
 
-    /**
-     * 调用系统 FFmpeg 命令生成视频封面
-     */
     private File generateVideoCover(String videoUrl) throws Exception {
         String tempDir = System.getProperty("java.io.tmpdir");
-        // 生成临时文件名，例如: cover_uuid.jpg
         String outputFileName = "cover_" + UUID.randomUUID().toString() + ".jpg";
         File outputFile = new File(tempDir, outputFileName);
 
         List<String> command = new ArrayList<>();
-        command.add("ffmpeg");       // 确保系统安装了 ffmpeg
-        command.add("-i");           // 输入
-        command.add(videoUrl);       // 视频地址（Minio http地址 或 本地路径均可）
-        command.add("-ss");          // 时间偏移
-        command.add("00:00:01");     // 截取第1秒（避免开头黑屏）
-        command.add("-vframes");     // 帧数
-        command.add("1");            // 只取1帧
-        command.add("-y");           // 覆盖同名文件
-        command.add(outputFile.getAbsolutePath()); // 输出路径
+        command.add("ffmpeg");
+        command.add("-i");
+        command.add(videoUrl);
+        command.add("-ss");
+        command.add("00:00:01");
+        command.add("-vframes");
+        command.add("1");
+        command.add("-y");
+        command.add(outputFile.getAbsolutePath());
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
-        // 继承IO可以将ffmpeg日志输出到控制台，方便调试
-        // processBuilder.inheritIO();
+
+        // ★★★ 关键修复：合并错误流并丢弃输出，防止 FFmpeg 缓冲区填满导致死锁 ★★★
+        processBuilder.redirectErrorStream(true);
+        processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
 
         Process process = processBuilder.start();
-        int exitCode = process.waitFor(); // 等待执行结束
+        int exitCode = process.waitFor();
 
         if (exitCode != 0 || !outputFile.exists() || outputFile.length() == 0) {
             throw new RuntimeException("FFmpeg 生成封面失败，exitCode=" + exitCode);
         }
 
         return outputFile;
-    }
-
-   @Transactional
-    public PostResponseDto toggleLike(String userId, Long postId) {
-    // 校验帖子是否存在
-    Post post = postRepository.findById(postId)
-            .orElseThrow(() -> new IllegalArgumentException("帖子不存在"));
-
-    // 构造 UserLikesPostId 实例
-    UserLikesPostId likeId = new UserLikesPostId(userId, postId);
-
-    if (likesRepository.existsById(likeId)) {
-        // 取消点赞
-        likesRepository.deleteById(likeId);
-        postRepository.decrementLikeCount(postId);   // SQL -1
-    } else {
-        // 点赞
-        likesRepository.save(new UserLikesPost(userId, postId));
-        postRepository.incrementLikeCount(postId);   // SQL +1
-    }
-
-    // 返回更新后的帖子数据
-    return convertToDTO(post);
-}
-
-
-    // 查询是否已点赞
-    public boolean isLiked(String userId, Long postId) {
-        return likesRepository.existsById(new UserLikesPostId(userId, postId));
-    }
-
-    // 获取帖子总点赞数（推荐用这个，比 post.likeCount 更实时）
-    public long getLikeCount(Long postId) {
-        return likesRepository.countById_PostId(postId);
     }
 }

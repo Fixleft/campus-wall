@@ -24,4 +24,7 @@ public class UserProfileDto {
 
     @Pattern(regexp = "男|女|保密", message = "性别必须为男 / 女 / 保密")
     private String gender;
+
+
+    private boolean isFriend;
 }

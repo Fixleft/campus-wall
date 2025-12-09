@@ -1,15 +1,21 @@
 // PostDetailModal.tsx
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import type { MediaType } from "./PostCard";
-import { TextPostCover } from "./PuraTextCard"; // 假设你导出到了这里
+import { TextPostCover } from "./PuraTextCard"; 
+import CommentSection from "./CommentSection";
+import { formatRelativeTime } from "@/utils/dateUtils";
+import AddFriendButton from "./AddFriendButton";
+import UserAvatar from "./UserAvatar";
+import {useUser} from "@/context/UserContext";
 
 interface PostDetailModalProps {
   id: number;
   isOpen: boolean;
   onClose: () => void;
+  uid: string;
   avatar: string;
   name: string;
   content: string;
@@ -22,11 +28,14 @@ interface PostDetailModalProps {
   handleLike: (e: React.MouseEvent) => void;
   bgColor?: string;
   accentColor?: string;
+  isFriend: boolean;
+  isAnonymous?: boolean;
 }
 
 export default function PostDetailModal({
   id,
   isOpen,
+  uid,
   onClose,
   avatar,
   name,
@@ -41,9 +50,9 @@ export default function PostDetailModal({
   // 接收 props
   bgColor = "#ffffff", 
   accentColor = "#000000",
+  isFriend,
+  isAnonymous = false,
 }: PostDetailModalProps) {
-  const [commentText, setCommentText] = useState("");
-  const [localComments, setLocalComments] = useState<string[]>([]);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
 
   useEffect(() => {
@@ -58,7 +67,7 @@ export default function PostDetailModal({
   const isVideo = currentMedia?.type === 'video';
   const currentUrl = currentMedia?.url; 
   const backgroundUrl = isVideo ? (currentMedia.coverUrl || undefined) : undefined;
-
+  const {user} = useUser();
   // ... (handleNext, handlePrev, onCommentSubmit logic keep same) ...
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -74,11 +83,51 @@ export default function PostDetailModal({
     }
   };
 
-  const onCommentSubmit = () => {
-    if (!commentText.trim()) return;
-    setLocalComments([...localComments, commentText]);
-    setCommentText("");
-  };
+
+  const PostHeaderContent = (
+    <div>
+      {/* User Info Header */}
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-neutral-800 pb-4 mb-4">
+        <div className="flex items-center gap-3">
+          <UserAvatar avatar={avatar} uid={uid} size="w-12 h-12" />
+          <div>
+            <p className="text-[18px] text-gray-800 font-[700] dark:text-white leading-none">{name}</p>
+            <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-1">
+               {location}  {formatRelativeTime(createdAt)}
+            </p>
+            
+          </div>
+        </div>
+        {!isAnonymous && <AddFriendButton 
+        targetUid={uid} 
+        variant="icon" // 只显示图标，节省空间
+        size="sm" 
+        className="text-gray-400 hover:bg-gray-100 bg-transparent shadow-none" // 自定义样式覆盖默认蓝底
+        initialIsFriend={isFriend} // 传入是否为好友的初始状态
+    />}
+      </div>
+
+      {/* Content Text */}
+      <p className="whitespace-pre-wrap text-[16px] leading-relaxed text-gray-700 font-[500] dark:text-gray-200">
+        {content}
+      </p>
+
+      {/* Tags */}
+      {tags && tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className="flex items-center justify-center text-[#002B69] dark:text-blue-400 text-[14px] font-medium cursor-pointer hover:underline"
+            >
+              <span className="mr-1">#</span>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <AnimatePresence>
@@ -95,7 +144,15 @@ export default function PostDetailModal({
               />
             </Dialog.Overlay>
 
-            <Dialog.Content forceMount asChild>
+            <Dialog.Content forceMount asChild
+             onPointerDownOutside={(e) => {
+                e.preventDefault(); 
+              }}
+              // 2. 防止其他交互导致的误关闭
+              onInteractOutside={(e) => {
+                e.preventDefault();
+              }}
+            >
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
                 onClick={(e) => {
                   if (e.target === e.currentTarget) onClose();
@@ -199,106 +256,15 @@ export default function PostDetailModal({
                   </div>
 
                   {/* Right Side: 45% (保持不变) */}
-                  <div className="flex flex-col h-full w-full bg-white dark:bg-neutral-900 min-w-0 overflow-hidden">
-                    {/* ... Right side content ... */}
-                    {/* 为了简洁省略了右侧代码，与原代码保持一致即可 */}
-                     <div className="flex items-center justify-between border-b border-gray-100 dark:border-neutral-800 p-4 shrink-0">
-                      <div className="flex items-center gap-3 pt-3">
-                        <img
-                          src={avatar}
-                          alt={name}
-                          className="h-10 w-10 rounded-full border border-gray-100 dark:border-neutral-800 object-cover mr-2"
-                        />
-                        <div>
-                          <p className="text-[18px] text-gray-800 font-[700] dark:text-white leading-none">{name}</p>
-                          <p className="text-[13px] text-gray-500 dark:text-gray-400 "> {location}</p>
-                          <p className="text-[13px] text-gray-500 dark:text-gray-400 ">
-                            {createdAt}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-                      <div className="mb-6">
-                        <p className="whitespace-pre-wrap text-[16px] leading-relaxed text-gray-700 font-[500] dark:text-gray-200">
-                          {content}
-                        </p>
-                        {/* Tags logic... */}
-                         <div className="mt-3 flex flex-wrap gap-2">
-                           {tags && tags.map((tag) => (
-                             <span key={tag} className="flex items-center justify-center text-[#002B69] dark:text-blue-400 text-[14px] font-medium cursor-pointer">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" fill="currentColor" className="w-4 h-4 shirk-0 items-center justify-center"><path d="M278.7 64.7C296 68.4 307 85.4 303.3 102.7L284.2 192L410.7 192L432.7 89.3C436.4 72 453.4 61 470.7 64.7C488 68.4 499 85.4 495.3 102.7L476.2 192L544 192C561.7 192 576 206.3 576 224C576 241.7 561.7 256 544 256L462.4 256L435 384L502.8 384C520.5 384 534.8 398.3 534.8 416C534.8 433.7 520.5 448 502.8 448L421.2 448L399.2 550.7C395.5 568 378.5 579 361.2 575.3C343.9 571.6 332.9 554.6 336.6 537.3L355.7 448L229.2 448L207.2 550.7C203.5 568 186.5 579 169.2 575.3C151.9 571.6 140.9 554.6 144.6 537.3L163.8 448L96 448C78.3 448 64 433.7 64 416C64 398.3 78.3 384 96 384L177.6 384L205 256L137.2 256C119.5 256 105.2 241.7 105.2 224C105.2 206.3 119.5 192 137.2 192L218.8 192L240.8 89.3C244.4 72 261.4 61 278.7 64.7zM270.4 256L243 384L369.5 384L396.9 256L270.4 256z" /></svg>
-                              {tag}
-                              </span>
-                           ))}
-                        </div>
-                      </div>
-                       {/* Comments logic... */}
-                       <div className="border-t border-gray-100 dark:border-neutral-800 pt-4">
-                        <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                          共{3 + localComments.length}条评论
-                        </p>
-                         {/* Comment list ... */}
-                         <div className="space-y-5">
-                          {["Nice post!", "Love this", "Great capture 🔥"].map((c, i) => (
-                            <div key={i} className="flex gap-3 group">
-                              <div className="h-8 w-8 shrink-0 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
-                                 <img src={`https://api.dicebear.com/9.x/micah/svg?seed=${i}`} alt="user" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-baseline gap-2">
-                                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">User_{i + 1}</p>
-                                  <span className="text-[10px] text-gray-400">2h ago</span>
-                                </div>
-                                <p className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">{c}</p>
-                              </div>
-                            </div>
-                          ))}
-                          {localComments.map((c, i) => (
-                             <div key={`local-${i}`} className="flex gap-3 animate-fade-in">
-                               <div className="h-8 w-8 shrink-0 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
-                                  <img src={avatar} alt="me" />
-                               </div>
-                               <div>
-                                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Me</p>
-                                 <p className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">{c}</p>
-                               </div>
-                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                     {/* Input Area ... */}
-                    <div className="border-t border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 sm:p-4 shrink-0">
-                      <div className="mb-3 flex items-center gap-4">
-                          <button onClick={handleLike} className="flex items-center gap-1.5 group">
-                              <Heart size={22} className={`transition-transform duration-200 active:scale-90 ${liked ? 'fill-red-500 text-red-500' : 'text-gray-500 dark:text-gray-400 group-hover:text-red-500'}`} />
-                              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{likes}</span>
-                          </button>
-                          <button className="flex items-center gap-1.5 group">
-                              <MessageCircle size={22} className="text-gray-500 dark:text-gray-400 group-hover:text-blue-500 transition" />
-                              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{3 + localComments.length}</span>
-                          </button>
-                      </div>
-
-                      <div className="relative flex items-center gap-2">
-                        <input
-                          value={commentText}
-                          onChange={(e) => setCommentText(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && onCommentSubmit()}
-                          placeholder="Add a comment..."
-                          className="flex-1 rounded-full bg-gray-100 dark:bg-neutral-800 px-4 py-2 text-sm outline-none transition focus:bg-white focus:ring-1 focus:ring-gray-300 dark:focus:bg-neutral-900 dark:focus:ring-neutral-700 dark:text-white placeholder:text-gray-400"
-                        />
-                        <button
-                          onClick={onCommentSubmit}
-                          disabled={!commentText.trim()}
-                          className="font-semibold text-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm px-2 hover:text-blue-600 transition"
-                        >
-                          发送
-                        </button>
-                      </div>
-                    </div>
+                  <div className="h-full w-full bg-white dark:bg-neutral-900 overflow-hidden flex flex-col">
+                    <CommentSection 
+                        postId={id}
+                        currentUserId={user?.uid}
+                        postLikes={likes}
+                        postLiked={liked}
+                         onPostLike={(e) => handleLike(e)}
+                        headerContent={PostHeaderContent} // 将文案部分传入
+                    />
                   </div>
                 </motion.div>
               </div>

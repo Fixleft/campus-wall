@@ -7,6 +7,12 @@ import api from "@/utils/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
+interface MediaItem {
+  url: string;
+  type: 'image' | 'video';
+  width: number;
+  height: number;
+}
 export default function PostUploadCard({
   isOpen,
   handleClick,
@@ -100,20 +106,19 @@ export default function PostUploadCard({
 
     try {
       // Step 1: 上传文件
-      const mediaUrls: string[] = [];
+      let uploadedMediaItems: MediaItem[] = [];
 
       if (files.length > 0) {
         const uploadPromises = files.map(async (file) => {
           const formData = new FormData();
           formData.append("file", file);
-          const res = await api.post<string>("/files/upload", formData, {
+          const res = await api.post<MediaItem>("/files/upload", formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
           return res.data;
         });
 
-        const urls = await Promise.all(uploadPromises);
-        mediaUrls.push(...urls);
+        uploadedMediaItems = await Promise.all(uploadPromises);
       }
 
       // Step 2: 准备地址数据
@@ -135,7 +140,7 @@ export default function PostUploadCard({
         content: content.trim() || null, // 如果内容为空字符串，传 null
         location: finalLocation,
         isAnonymous,
-        mediaUrls: mediaUrls.length > 0 ? mediaUrls : null,
+        mediaItems: uploadedMediaItems.length > 0 ? uploadedMediaItems : null, 
         tags: tags.length > 0 ? tags : null,
       });
 
@@ -179,7 +184,7 @@ export default function PostUploadCard({
         exit={{ opacity: 0, scale: 0.95 }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <div className="relative flex flex-row items-center p-8 bg-white rounded-xl shadow-2xl w-[800px] h-[500px] overflow-hidden text-neutral-400 dark:text-neutral-400">
+        <div className="relative flex flex-row items-center p-8 bg-white rounded-xl shadow-2xl w-[800px] h-[500px] overflow-hidden text-neutral-400 dark:text-white dark:bg-neutral-900">
           
           {/* 5. 插入 Alert 组件：使用绝对定位浮在顶部，不影响原有布局 */}
           <AnimatePresence>
@@ -210,8 +215,8 @@ export default function PostUploadCard({
                 absolute top-6 right-8 px-4 py-1.5 rounded-[8px] font-medium text-[18px]
                 transition-all duration-200 z-50
                 ${canPost && !uploading
-                  ? "text-white bg-black hover:bg-gray-800 shadow-lg hover:shadow-xl"
-                  : "text-gray-400 bg-gray-200 cursor-not-allowed"
+                  ? "text-white bg-black hover:bg-gray-800 shadow-lg hover:shadow-xl dark:bg-white dark:hover:bg-gray-100 dark:text-black"
+                  : "text-gray-400 bg-gray-200 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-400"
                 }
               `}
             >
@@ -222,19 +227,19 @@ export default function PostUploadCard({
               placeholder="这一刻的想法..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full h-40 p-4 text-black focus:outline-none resize-none"
+              className="w-full h-40 p-4 text-black focus:outline-none resize-none dark:bg-neutral-900 dark:text-white"
             />
             <div className="mt-3 h-26 flex flex-wrap gap-2 
                   overflow-y-auto overflow-x-hidden     
                   py-2 bg-white 
                   scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent
-                  hover:scrollbar-thumb-gray-500">
+                  hover:scrollbar-thumb-gray-500 dark:bg-neutral-900 dark:text-white">
               {tags.map((tag) => (
                 <button
                   key={tag}
                   type="button"
                   onClick={() => handleRemoveTag(tag)}
-                  className="text-[#002456] flex items-center"
+                  className="text-[#002456] flex items-center dark:text-white"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"

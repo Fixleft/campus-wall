@@ -1,7 +1,6 @@
-import ProfileTabs from "@/components/ProfileTabs";
 import UserInfoEditCard from "@/components/UserInfoEditCard";
 import { useState } from "react";
-import { useUser } from "@/data/UserContext";
+import { useUser } from "@/context/UserContext";
 import MyPostList from "@/components/MyPostList";
 
 
@@ -72,8 +71,8 @@ export default function ProfilePage() {
                 </div>
                 
             </div>
-            <ProfileTabs />
-             <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+            
+             <div className="max-w-[1600px] mx-auto">
                 <MyPostList />
             </div>
             {/* 点击按钮后显示的组件 */}

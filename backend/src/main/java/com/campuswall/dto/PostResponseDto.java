@@ -22,10 +22,12 @@ public class PostResponseDto {
     private int commentCount;
     private int viewCount;
 
-    private List<PostMediaDto> mediaUrls;
+    private List<PostMediaDto> media;
     private List<String> tags;
 
     private boolean isLiked;
+    private boolean isFriend;
+    private int status;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     private LocalDateTime createdAt;

@@ -1,16 +1,22 @@
 // User.java
 package com.campuswall.entity;
 
+import com.campuswall.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "user")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@EntityListeners(AuditingEntityListener.class)
 public class User {
 
     @Id
@@ -37,4 +43,18 @@ public class User {
 
     @Column(name = "password", nullable = false, length = 255)
     private String password;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, columnDefinition = "varchar(20) default 'USER'")
+    private UserRole role = UserRole.USER;
+
+    @Column(nullable = false, columnDefinition ="boolean default true")
+    private Boolean enabled = true;
+
+    @Column(name = "mute_end_time")
+    private LocalDateTime muteEndTime;
+
+    @CreatedDate
+    @Column(nullable = false, columnDefinition = "datetime default now()")
+    private LocalDateTime createdAt;
 }

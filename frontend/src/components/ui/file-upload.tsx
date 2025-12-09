@@ -139,7 +139,7 @@ export const FileUpload = ({
                           {(file.size / (1024 * 1024)).toFixed(2)} MB
                         </motion.p>
 
-                        {/* 3. 新增：删除按钮 */}
+                      
                         <button
                           onClick={(e) => handleRemoveFile(idx, e)}
                           className="p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-neutral-500 hover:text-red-500 transition-colors z-50"
@@ -238,3 +238,4 @@ export function GridPattern() {
     </div>
   );
 }
+

@@ -12,6 +12,7 @@ interface User {
   hometown?: string;
   age?: number;
   gender?: string;
+  enable: boolean;
 }
 
 interface UserContextType {

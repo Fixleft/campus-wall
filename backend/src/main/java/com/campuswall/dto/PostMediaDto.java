@@ -12,4 +12,6 @@ public class PostMediaDto {
     private String url;
     private String type;
     private String coverUrl;
+    private int width;
+    private int height;
 }

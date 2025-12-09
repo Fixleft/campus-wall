@@ -30,24 +30,54 @@ public class PostController {
 
     private final PostService postService;
 
-    @GetMapping("/latest")
+
+     @GetMapping("/search")
+    @PermitAll // 允许未登录用户搜索
+    public Result<Page<PostResponseDto>> searchPosts(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size
+    ) {
+        // 1. 获取当前用户UID (可能为 null 或 "anonymousUser")
+        String currentUid = getCurrentUidOptional();
+
+        // 2. 调用 Service
+        Page<PostResponseDto> result = postService.searchPosts(keyword, currentUid, PageRequest.of(page, size));
+
+        // 3. 返回结果
+        return Result.ok(result);
+    }
+
+    // --- 辅助方法 ---
+    private String getCurrentUidOptional() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+            return auth.getName();
+        }
+        return null;
+    }
+
+   @GetMapping("/latest")
     @PermitAll
-    public Map<String, Object> getLatestPosts(
+    // 1. 修改返回类型为 Result<Map<String, Object>>
+    public Result<Map<String, Object>> getLatestPosts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "15") int size) {
-    Page<PostResponseDto> postPage = postService.getLatestPosts(page, size);
 
-    Map<String, Object> response = new HashMap<>();
-    response.put("content", postPage.getContent());
-    response.put("currentPage", postPage.getNumber());
-    response.put("totalItems", postPage.getTotalElements());
-    response.put("totalPages", postPage.getTotalPages());
+        Page<PostResponseDto> postPage = postService.getLatestPosts(page, size);
 
-    return response;
-}
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", postPage.getContent());
+        response.put("currentPage", postPage.getNumber());
+        response.put("totalItems", postPage.getTotalElements());
+        response.put("totalPages", postPage.getTotalPages());
+
+        // 2. 使用 Result.ok() 进行包装
+        return Result.ok(response);
+    }
 
     @PostMapping("/upload")
-    @RolesAllowed("USER")
+    @RolesAllowed({"USER", "ADMIN"})
 
     public Post uploadPost(@RequestBody @Valid CreatePostRequestDto request) throws Exception {
         // 1. 获取当前登录用户
@@ -61,13 +91,13 @@ public class PostController {
         request.getContent(),
         request.getLocation(),
         Boolean.TRUE.equals(request.getIsAnonymous()),
-        request.getMediaUrls(),
+        request.getMediaItems(),
         request.getTags()
     );
 }
 
     @PostMapping("/{postId}/like")
-    @RolesAllowed("USER")
+    @RolesAllowed({"USER", "ADMIN"})
     public Result<?> like(Authentication authentication,
                           @PathVariable Long postId) {
         String userId = authentication.getName();   // ← 直接拿 uid，100% 有值！
@@ -82,7 +112,7 @@ public class PostController {
     }
 
     @DeleteMapping("/{postId}")
-    @RolesAllowed("USER")
+    @RolesAllowed({"USER", "ADMIN"})
     public ResponseEntity<Void> deletePost(
             @PathVariable Long postId,
             Authentication authentication
@@ -95,7 +125,7 @@ public class PostController {
     }
 
     @PutMapping("/{postId}")
-    @RolesAllowed("USER")
+    @RolesAllowed({"USER", "ADMIN"})
     public ResponseEntity<Void> updatePost(
             @PathVariable Long postId,
             @RequestBody @Valid PostUpdateDto dto,

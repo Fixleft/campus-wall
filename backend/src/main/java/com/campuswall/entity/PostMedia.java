@@ -25,6 +25,15 @@ public class PostMedia {
     @Column(length = 500)
     private String coverUrl;
 
+
+    @Column(name = "width")
+    private Integer width;
+
+
+    @Column(name = "height")
+    private Integer height;
+    // === 新增部分结束 ===
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id", nullable = false)
     private Post post;

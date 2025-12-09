@@ -2,9 +2,10 @@
 
 import { X, Camera } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import { useUser } from '@/data/UserContext';
+import { useUser } from '@/context/UserContext';
 import api from '@/utils/api';
-
+import { AnimatePresence, motion } from 'framer-motion';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 interface UserInfoEditCardProps {
   onClose: () => void;
 }
@@ -18,7 +19,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
   const [age, setAge] = useState(user?.age || 0);
   const [hometown, setHometown] = useState(user?.hometown || '');
   const [signature, setSignature] = useState(user?.signature || '');
-
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +37,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      alert('请上传图片文件');
+      setErrorMessage('请上传图片文件');
       return;
     }
     setUploadedFile(file);
@@ -65,7 +66,7 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
-        finalAvatarUrl = res.data; // 后端返回的永久 URL
+        finalAvatarUrl = res.data.url; // 后端返回的永久 URL
       }
 
       await api.put(`/users/${user.uid}/update`, {
@@ -100,10 +101,33 @@ export default function UserInfoEditCard({ onClose }: UserInfoEditCardProps) {
     }
   }, [user]);
 
+   useEffect(() => {
+      if (errorMessage) {
+        const timer = setTimeout(() => {
+          setErrorMessage(null); 
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }, [errorMessage]); 
+
   if (!user) return null;
 
   return (
     <>
+     <AnimatePresence>
+                {errorMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-4 left-4 right-4 z-50"
+                  >
+                    <Alert variant="destructive" className="rounded-lg bg-zinc-900 border border-red-900 text-red-500 shadow-xl py-2">
+                      <AlertDescription className="text-center text-sm">{errorMessage}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+      </AnimatePresence>
       {/* 遮罩层 */}
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 

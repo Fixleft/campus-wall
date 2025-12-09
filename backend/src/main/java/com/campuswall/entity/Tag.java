@@ -1,8 +1,9 @@
 package com.campuswall.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.proxy.HibernateProxy; // 需要引入这个包，或者只用 instanceof
+
 
 import java.util.HashSet;
 import java.util.Objects;
@@ -25,6 +26,8 @@ public class Tag {
 
     // 1. 改为 Set
     @ManyToMany(mappedBy = "tags")
+    @JsonIgnore
+    @ToString.Exclude
     private Set<Post> posts = new HashSet<>();
 
     public Tag(String name) {

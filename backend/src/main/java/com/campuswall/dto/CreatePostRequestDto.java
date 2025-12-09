@@ -9,7 +9,7 @@ public class CreatePostRequestDto {
     private String content;
     private String location;
     private Boolean isAnonymous = false;
-    private List<String> mediaUrls;  // 必须是具体类型
+    private List<MediaItemRequest> mediaItems;
     private List<String> tags;
 
 }
